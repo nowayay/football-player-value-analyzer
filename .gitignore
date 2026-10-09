@@ -10,5 +10,6 @@ __pycache__/
 .DS_Store
 .streamlit/secrets.toml
 
-# Intermediate table, rebuilt by `python -m src.data`
+# Intermediate tables, rebuilt by `python -m src.data` and `python -m src.features`
 data/processed/player_season.parquet
+data/processed/features.parquet

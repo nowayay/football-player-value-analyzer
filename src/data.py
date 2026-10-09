@@ -39,6 +39,7 @@ TABLES = ["players", "player_valuations", "appearances", "games", "club_games", 
 TOP5_LEAGUES = {"GB1": "Premier League", "ES1": "LaLiga", "IT1": "Serie A", "L1": "Bundesliga", "FR1": "Ligue 1"}
 POSITION_GROUPS = {"Goalkeeper": "GK", "Defender": "DEF", "Midfield": "MID", "Attack": "ATT"}
 
+TEST_SEASON = 2025  # 2025/26: latest complete season, held out until the final evaluation
 MIN_MINUTES = 450  # about 5 full league games; below this, per-90 stats are mostly noise
 VALUATION_DEADLINE = (10, 31)  # (month, day) in year S+1: latest accepted valuation date
 
