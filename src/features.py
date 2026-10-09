@@ -66,6 +66,13 @@ ONE_HOT_FEATURES = (
 FEATURES = NUMERIC_FEATURES + ONE_HOT_FEATURES
 RIDGE_EXTRA = ["season_index"]  # seasons since 2012/13: a linear time trend, only for a Ridge variant
 
+# Context features: where the player plays rather than how. Dropped in the player-only variant to see
+# how much of the prediction comes from the player's own profile and output.
+CONTEXT_FEATURES = ["club_ppg", "club_rank_pct", "league_median_log_value_prev"] + [f"league_{lg}" for lg in LEAGUE_LEVELS]
+PLAYER_ONLY_FEATURES = [f for f in FEATURES if f not in CONTEXT_FEATURES]
+# Second baseline: a linear model that only knows age and position group.
+AGE_POSITION_FEATURES = ["age", "age_sq"] + [f"pos_{p}" for p in POSITION_LEVELS]
+
 TARGET = "log_value"
 # Kept next to the features for display and evaluation only; never fed to a model.
 INFO_COLUMNS = ["player_id", "season", "name", "club_name", "competition_id", "position_group", "sub_position",

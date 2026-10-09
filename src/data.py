@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = ROOT / "data" / "raw"
 PROCESSED_DIR = ROOT / "data" / "processed"
 REPORTS_DIR = ROOT / "reports"
+MODELS_DIR = ROOT / "models"
 PLAYER_SEASON_PATH = PROCESSED_DIR / "player_season.parquet"
 
 # Public mirror published by the dataset maintainer (same files as the Kaggle dataset).
