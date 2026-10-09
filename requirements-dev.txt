@@ -1,0 +1,4 @@
+-r requirements.txt
+# Only needed to open/re-run the notebooks, not for the pipeline or the app
+jupyterlab>=4.2
+ipykernel>=6.29
