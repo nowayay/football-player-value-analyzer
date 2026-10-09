@@ -4,7 +4,9 @@ Residual = log(predicted) - log(market value). Positive = the model expects more
 market pays ("undervalued" candidate); negative = the market pays a premium ("overvalued").
 
 `python -m src.evaluate` scores the saved models on the held-out test season (2025/26).
-The models were selected on CV only; the test result is reported, never used for tuning.
+The models and the conformal interval correction were chosen and frozen on CV only; the test
+result is reported, never used for tuning. The first run writes reports/.test_evaluated and
+later runs refuse unless --force-rerun is given (which is then logged in test_metrics.csv).
 
 Usage:
     python -m src.evaluate
@@ -12,7 +14,10 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import json
+import sys
+from datetime import datetime, timezone
 
 import joblib
 import matplotlib.pyplot as plt
@@ -25,7 +30,15 @@ from src.plot_style import SERIES, TEXT_MUTED, apply_style
 
 FIGURES_DIR = REPORTS_DIR / "figures"
 FLAG_MIN_MINUTES = 900  # only flag players with 10+ full games of evidence
-MODEL_NAMES = ["baseline_median", "ridge_age_position", "ridge", "xgb", "xgb_player_only"]
+TEST_MARKER = REPORTS_DIR / ".test_evaluated"
+MODEL_LABELS = {
+    "baseline_median": "Median baseline (position x age band)",
+    "ridge_age_position": "Ridge: age + position",
+    "ridge": "Ridge: all features",
+    "xgb": "XGBoost: all features (main)",
+    "xgb_player_market": "XGBoost: player-only + league market level",
+}
+INTERVAL_MODELS = ["xgb", "xgb_player_market"]
 
 AGE_BINS = [0, 21, 24, 27, 30, 33, 100]
 AGE_LABELS = ["<21", "21-23", "24-26", "27-29", "30-32", "33+"]
@@ -139,7 +152,25 @@ def plot_residuals(df: pd.DataFrame, title: str, path) -> None:
     plt.close(fig)
 
 
+def test_intervals(name: str, test: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Conformally corrected 80% interval (log scale) from the saved quantile models and frozen correction."""
+    from src.train import CONFORMAL_PATH, apply_correction  # local import: src.train imports this module
+
+    correction = json.loads(CONFORMAL_PATH.read_text())[name]["correction_log"]
+    low = joblib.load(MODELS_DIR / f"{name}_q10.joblib").predict(test)
+    high = joblib.load(MODELS_DIR / f"{name}_q90.joblib").predict(test)
+    return apply_correction(low, high, correction)
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--force-rerun", action="store_true", help="evaluate the test set again (logged)")
+    args = parser.parse_args()
+    if TEST_MARKER.exists() and not args.force_rerun:
+        sys.exit(f"The test season was already evaluated ({TEST_MARKER.read_text().strip()}). "
+                 "It is spent: rerunning would invite tuning on it. Use --force-rerun only to regenerate reports.")
+    first_run_note = TEST_MARKER.read_text().strip() if TEST_MARKER.exists() else ""
+
     apply_style()
     config = json.loads((MODELS_DIR / "model_config.json").read_text())
     main_name = config["main_model"]
@@ -148,27 +179,33 @@ def main() -> None:
     print(f"Test season {season_label(TEST_SEASON)}: {len(test):,} player-seasons. "
           "Models were chosen on CV only; this is a one-off report, not a tuning step.\n")
 
-    models = {name: joblib.load(MODELS_DIR / f"{name}.joblib") for name in MODEL_NAMES}
-    preds = {name: model.predict(test) for name, model in models.items()}
-    low = joblib.load(MODELS_DIR / "quantile_q10.joblib").predict(test)
-    high = joblib.load(MODELS_DIR / "quantile_q90.joblib").predict(test)
+    preds = {name: joblib.load(MODELS_DIR / f"{name}.joblib").predict(test) for name in MODEL_LABELS}
+    intervals = {name: test_intervals(name, test) for name in INTERVAL_MODELS}
+    y = test["log_value"].to_numpy()
 
     rows = []
     for name, pred in preds.items():
-        rows.append({"model": name, **regression_metrics(test["log_value"], pred),
-                     "mean_bias": float(np.mean(pred - test["log_value"]))})
+        row = {"model": name, "label": MODEL_LABELS[name], **regression_metrics(y, pred),
+               "mean_bias": float(np.mean(pred - y)), "interval_coverage_80": float("nan")}
+        if name in intervals:
+            low, high = intervals[name]
+            row["interval_coverage_80"] = float(np.mean((y >= low) & (y <= high)))
+        rows.append(row)
     test_metrics = pd.DataFrame(rows).set_index("model")
-    y = test["log_value"].to_numpy()
-    lo, hi = np.minimum(low, high), np.maximum(low, high)
-    test_metrics["interval_coverage_80"] = np.nan
-    test_metrics.loc["xgb", "interval_coverage_80"] = float(np.mean((y >= lo) & (y <= hi)))
+    test_metrics["evaluated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    test_metrics["forced_rerun"] = bool(args.force_rerun)
+    test_metrics["first_evaluation"] = first_run_note or "this run"
 
     cv = pd.read_csv(REPORTS_DIR / "cv_summary.csv", index_col="model")
     comparison = pd.DataFrame({"cv_rmse_log": cv["rmse_log"], "test_rmse_log": test_metrics["rmse_log"],
-                               "cv_r2_log": cv["r2_log"], "test_r2_log": test_metrics["r2_log"]})
+                               "gap": test_metrics["rmse_log"] - cv["rmse_log"],
+                               "cv_r2_log": cv["r2_log"], "test_r2_log": test_metrics["r2_log"],
+                               "cv_coverage": cv["coverage_conformal"],
+                               "test_coverage": test_metrics["interval_coverage_80"]})
 
     # Residual analysis for the main model.
-    df = test.assign(pred=preds[main_name], pred_low=lo, pred_high=hi)
+    low, high = intervals[main_name]
+    df = test.assign(pred=preds[main_name], pred_low=low, pred_high=high)
     df["residual"] = df["pred"] - df["log_value"]
     df["flag"] = interval_flag(df)
     df["age_band"] = age_bucket(df["age"])
@@ -182,15 +219,20 @@ def main() -> None:
         REPORTS_DIR / "test_breakdown.csv")
     failures.to_csv(REPORTS_DIR / "test_failure_segments.csv")
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-    label = f"{season_label(TEST_SEASON)} test season, {main_name}"
-    plot_predicted_vs_actual(df, f"Predicted vs market value ({label})", FIGURES_DIR / "pred_vs_actual.png")
+    label = f"{season_label(TEST_SEASON)} test season, {MODEL_LABELS[main_name]}"
+    plot_predicted_vs_actual(df, f"Predicted vs market value\n{label}", FIGURES_DIR / "pred_vs_actual.png")
     plot_residuals(df, f"Residuals vs prediction ({label})", FIGURES_DIR / "residuals_vs_pred.png")
+    if not first_run_note:
+        TEST_MARKER.write_text(f"first evaluated {test_metrics['evaluated_at'].iloc[0]}\n")
 
-    pd.set_option("display.width", 220, "display.float_format", "{:.3f}".format)
+    pd.set_option("display.width", 240, "display.float_format", "{:.3f}".format)
     print("Test metrics (all models):")
-    print(test_metrics.to_string(formatters={"mae_eur": "{:,.0f}".format}))
-    print("\nCV vs test (log RMSE / R2):")
+    print(test_metrics.drop(columns=["label", "evaluated_at", "forced_rerun", "first_evaluation"]).to_string(
+        formatters={"mae_eur": "{:,.0f}".format}))
+    print("\nCV vs test (gap = test - CV RMSE, log):")
     print(comparison.to_string())
+    big = comparison.index[comparison["gap"].abs() > 0.05].tolist()
+    print(f"Models with |test - CV| RMSE gap > 0.05: {big or 'none'}")
     print(f"\nMain model ({main_name}) by position group:\n{by_position.to_string()}")
     print(f"\nBy age band:\n{by_age.to_string()}")
     print(f"\nBy league:\n{by_league.to_string()}")

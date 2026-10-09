@@ -13,3 +13,6 @@ __pycache__/
 # Intermediate tables, rebuilt by `python -m src.data` and `python -m src.features`
 data/processed/player_season.parquet
 data/processed/features.parquet
+
+# Local marker: the test season has been evaluated in this checkout
+reports/.test_evaluated

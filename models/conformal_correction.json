@@ -1,0 +1,12 @@
+{
+  "xgb": {
+    "correction_log": 0.0727880127926781,
+    "target_coverage": 0.8,
+    "fit_on": "OOF conformity scores of CV folds 2021/22, 2022/23, 2023/24, 2024/25"
+  },
+  "xgb_player_market": {
+    "correction_log": 0.08275629929887884,
+    "target_coverage": 0.8,
+    "fit_on": "OOF conformity scores of CV folds 2021/22, 2022/23, 2023/24, 2024/25"
+  }
+}

@@ -8,8 +8,15 @@ import pytest
 
 from src.data import TEST_SEASON
 from src.evaluate import interval_flag, rank_by_residual, regression_metrics
-from src.features import TARGET
-from src.train import CV_VALID_SEASONS, expanding_window_folds, make_xgb
+from src.features import CLUB_AND_LEAGUE_FEATURES, PLAYER_MARKET_FEATURES, TARGET
+from src.models import make_xgb
+from src.train import (
+    CV_VALID_SEASONS,
+    apply_correction,
+    conformal_correction,
+    expanding_window_folds,
+    forward_corrections,
+)
 
 
 def make_split_frame() -> pd.DataFrame:
@@ -111,3 +118,40 @@ def test_residual_ranking_is_reproducible_with_fixed_seed():
 def test_residual_ties_are_broken_by_player_id():
     df = pd.DataFrame({"player_id": [3, 1, 2], "residual": [0.5, 0.5, 0.9]})
     assert rank_by_residual(df)["player_id"].tolist() == [2, 1, 3]
+
+
+def test_conformal_correction_for_fold_k_uses_only_earlier_folds():
+    rng = np.random.default_rng(1)
+    scores = {season: rng.normal(size=200) for season in CV_VALID_SEASONS}
+    base = forward_corrections(scores)
+    assert np.isnan(base[CV_VALID_SEASONS[0]])  # no earlier fold to learn from
+    assert base[2022] == pytest.approx(conformal_correction(scores[2021]))
+    assert base[2024] == pytest.approx(conformal_correction(np.concatenate([scores[2021], scores[2022], scores[2023]])))
+    # Changing fold k or any later fold must not change the correction used for fold k.
+    for k in CV_VALID_SEASONS[1:]:
+        altered = {s: (v + 100 if s >= k else v) for s, v in scores.items()}
+        assert forward_corrections(altered)[k] == pytest.approx(base[k])
+
+
+def test_conformal_correction_hits_target_coverage_on_its_own_scores():
+    scores = np.random.default_rng(2).normal(size=1000)
+    c = conformal_correction(scores, coverage=0.8)
+    assert np.mean(scores <= c) >= 0.8
+
+
+def test_corrected_interval_is_never_narrower_and_ordered():
+    rng = np.random.default_rng(3)
+    low, high = rng.normal(size=500), rng.normal(size=500)  # deliberately crossing quantiles
+    raw_low, raw_high = np.minimum(low, high), np.maximum(low, high)
+    for correction in [0.0, 0.3, -0.5]:  # a negative correction must not shrink the interval
+        new_low, new_high = apply_correction(low, high, correction)
+        assert (new_high >= new_low).all()
+        assert (new_low <= raw_low).all() and (new_high >= raw_high).all()
+    assert conformal_correction(np.full(100, -1.0)) == 0.0  # over-covering raw interval: no shrinking
+
+
+def test_player_market_variant_features():
+    assert "league_median_log_value_prev" in PLAYER_MARKET_FEATURES
+    assert not set(CLUB_AND_LEAGUE_FEATURES) & set(PLAYER_MARKET_FEATURES)
+    assert not [f for f in PLAYER_MARKET_FEATURES if f.startswith(("league_", "club_")) and f != "league_median_log_value_prev"]
+    assert {"age", "minutes", "ga_p90", "form_ga_p90", "pos_GK"} <= set(PLAYER_MARKET_FEATURES)
