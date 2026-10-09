@@ -1,0 +1,11 @@
+# Raw data is downloaded, never committed (license + size)
+data/raw/*
+!data/raw/.gitkeep
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store
+.streamlit/secrets.toml
