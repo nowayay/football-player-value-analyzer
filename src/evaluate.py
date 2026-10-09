@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from src.data import MODELS_DIR, REPORTS_DIR, TEST_SEASON, TOP5_LEAGUES, season_label
+from src.data import MIN_MINUTES, MODELS_DIR, REPORTS_DIR, TEST_SEASON, TOP5_LEAGUES, season_label
 from src.features import FEATURES_PATH
 from src.plot_style import SERIES, TEXT_MUTED, apply_style
 
@@ -88,6 +88,38 @@ def interval_flag(df: pd.DataFrame, min_minutes: int = FLAG_MIN_MINUTES) -> pd.S
         default="in range",
     )
     return pd.Series(flag, index=df.index, name="flag")
+
+
+def add_gaps_and_flags(df: pd.DataFrame, min_minutes: int = FLAG_MIN_MINUTES) -> pd.DataFrame:
+    """Add raw and season-centred gaps plus over/undervalued flags (the one flag rule used everywhere).
+
+    Needs columns season, minutes, log_value, pred, pred_low, pred_high (all log scale).
+
+    - raw_gap = log(pred) - log(market). Positive = the model is above the market.
+    - season_shift = median raw_gap of the season's rows with >= MIN_MINUTES (450) minutes.
+    - adjusted_gap = raw_gap - season_shift, so its median is 0 within every season.
+    - adjusted_low / adjusted_high: the 80% interval shifted by the same constant.
+    - flag: undervalued/overvalued only if the market value falls outside the shifted interval
+      and minutes >= min_minutes.
+    - flag_raw: the same rule without centring (sensitivity variant).
+
+    Why centre: the model under-predicts a whole season when market prices rise faster than the
+    lagged league market level can follow (2025/26 test bias was -0.15 log, about -14%). That shift
+    is common to everyone, so raw flags label most players "overvalued". Centring compares each
+    player with the rest of the same season. It uses only that season's cross-section of
+    predictions and market values (known at the valuation date), never future information.
+    """
+    out = df.copy()
+    out["raw_gap"] = out["pred"] - out["log_value"]
+    eligible = out["minutes"] >= MIN_MINUTES
+    shift = out[eligible].groupby("season")["raw_gap"].median()
+    out["season_shift"] = out["season"].map(shift)
+    out["adjusted_gap"] = out["raw_gap"] - out["season_shift"]
+    out["adjusted_low"] = out["pred_low"] - out["season_shift"]
+    out["adjusted_high"] = out["pred_high"] - out["season_shift"]
+    out["flag"] = interval_flag(out.assign(pred_low=out["adjusted_low"], pred_high=out["adjusted_high"]), min_minutes)
+    out["flag_raw"] = interval_flag(out, min_minutes)
+    return out
 
 
 def rank_by_residual(df: pd.DataFrame) -> pd.DataFrame:

@@ -1,0 +1,28 @@
+,mean_abs_shap
+club_ppg,0.35412458
+age,0.34524682
+league_median_log_value_prev,0.28949857
+minutes,0.19669653
+prev_minutes,0.17452803
+minutes_share,0.15897681
+league,0.111656524
+club_rank_pct,0.10478279
+ga_p90,0.09134378
+age_sq,0.09121553
+appearances,0.06530229
+form_goals_p90,0.042375915
+position group,0.04159531
+goals_p90,0.03915799
+sub-position,0.038522467
+form_ga_p90,0.034546424
+prev_ga_p90,0.03438927
+prev_league_is_top5,0.022220204
+height_in_cm,0.019610813
+prev_goals_p90,0.01922677
+prev_assists_p90,0.014012865
+yellow_p90,0.008958462
+form_assists_p90,0.008808183
+assists_p90,0.0055756476
+red_p90,0.005241696
+preferred foot,0.002046621
+has_prev_season,0.00012583578
