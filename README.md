@@ -2,7 +2,10 @@
 
 **Estimates what a top-5-league footballer's market value "should" be from age, role, playing time, club and league context, then shows where the market pays a premium or a discount, with a backtest that checks whether those gaps mean anything.**
 
-> **Live demo:** _add your Streamlit Community Cloud link here after deploying (see [Deploy](#deploy-to-streamlit-community-cloud))._
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nowayay-football-player-value-analyzer.streamlit.app/)
+
+**Live demo:** [nowayay-football-player-value-analyzer.streamlit.app](https://nowayay-football-player-value-analyzer.streamlit.app/)  
+_Free hosting: if the app was idle it may take a few seconds to wake up._
 
 <!-- Demo GIF placeholder: record the app (Undervalued tab -> Player lookup -> Model performance) and save it as
      reports/figures/demo.gif, then replace the screenshot below with ![Demo](reports/figures/demo.gif) -->
@@ -231,6 +234,8 @@ The app alone needs no raw data, no training and no model files: `pip install -r
 
 ## Deploy to Streamlit Community Cloud
 
+The live app runs at [nowayay-football-player-value-analyzer.streamlit.app](https://nowayay-football-player-value-analyzer.streamlit.app/). To deploy your own copy:
+
 1. Push the repository to GitHub. Make sure these are committed: `app/`, `src/__init__.py`, `src/plot_style.py`,
    `data/processed/player_values.csv`, `data/processed/player_stats.csv`, `reports/*.csv` and `reports/figures/*.png`.
 2. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub.
@@ -240,7 +245,7 @@ The app alone needs no raw data, no training and no model files: `pip install -r
 6. Click **Deploy**. Community Cloud uses the dependency file next to the entrypoint first, so it installs the
    lightweight `app/requirements.txt` (pandas, numpy, matplotlib, streamlit, pyarrow), not the full root
    `requirements.txt`.
-7. Copy the app URL into the "Live demo" line at the top of this README.
+7. Put your app URL in the "Live demo" line and the badge link at the top of this README.
 8. To update the app: re-run `python -m src.predict` (and the report scripts) locally, commit the changed CSV/PNG
    files and push; the app redeploys automatically.
 
