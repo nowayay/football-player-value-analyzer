@@ -4,8 +4,15 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from src.backtest import next_year_outcome, out_of_fold_predictions
+from src.backtest import (
+    impute_missing_outcomes,
+    matched_excess,
+    next_year_outcome,
+    ols_with_bootstrap,
+    out_of_fold_predictions,
+)
 from src.data import TEST_SEASON
 from src.evaluate import add_gaps_and_flags
 from src.explain import grouped_shap
@@ -117,3 +124,38 @@ def test_grouped_shap_keeps_market_level_separate_and_preserves_sums():
     assert set(grouped.columns) == {"league", "league_median_log_value_prev", "position group", "age"}
     np.testing.assert_allclose(grouped.sum(axis=1), values.sum(axis=1))
     np.testing.assert_allclose(grouped["league"], values[:, 0] + values[:, 1])
+
+
+def test_missing_outcome_bound_uses_same_season_quantile_and_only_fills_missing():
+    df = pd.DataFrame({"season": [2023] * 5 + [2024] * 5,
+                       "delta_log_value": [0.0, 0.1, 0.2, 0.3, np.nan, -1.0, -0.5, 0.0, np.nan, np.nan]})
+    filled = impute_missing_outcomes(df, 0.10)
+    observed = df["delta_log_value"].notna()
+    pd.testing.assert_series_equal(filled.loc[observed, "delta_log_value"], df.loc[observed, "delta_log_value"])
+    assert filled.loc[4, "delta_log_value"] == pytest.approx(np.quantile([0.0, 0.1, 0.2, 0.3], 0.10))
+    assert filled.loc[[8, 9], "delta_log_value"].tolist() == pytest.approx([np.quantile([-1.0, -0.5, 0.0], 0.10)] * 2)
+
+
+def test_regression_recovers_flag_effect_with_continuous_age():
+    """The regression uses age + age^2 (no age_band column needed) and recovers a planted effect."""
+    rng = np.random.default_rng(0)
+    n = 3000
+    df = pd.DataFrame({"player_id": rng.integers(0, 1000, n), "season": rng.choice([2021, 2022, 2023], n),
+                       "age": rng.uniform(18, 36, n), "position_group": rng.choice(["GK", "DEF", "MID", "ATT"], n),
+                       TARGET: rng.normal(15, 1, n), "flag": rng.choice(["undervalued", "in range", "overvalued"], n)})
+    df["delta_log_value"] = (0.2 * (df["flag"] == "undervalued") - 0.1 * (df["flag"] == "overvalued")
+                             - 0.01 * (df["age"] - 27) ** 2 + rng.normal(0, 0.1, n))
+    reg = ols_with_bootstrap(df, "flag", season_effects=True, n_boot=50)
+    assert reg.loc["flag_under", "coef"] == pytest.approx(0.2, abs=0.02)
+    assert reg.loc["flag_over", "coef"] == pytest.approx(-0.1, abs=0.02)
+    assert reg.loc["flag_under", "ci_low"] < 0.2 < reg.loc["flag_under", "ci_high"]
+
+
+def test_matched_excess_on_known_values():
+    """Flagged player gains 0.5; others in the same cell average 0.1 -> excess 0.4. Other cells are ignored."""
+    df = pd.DataFrame({"player_id": [1, 2, 3, 4], "season": 2023, "position_group": ["MID", "MID", "MID", "DEF"],
+                       "age_band": ["22-25"] * 4, "flag": ["undervalued", "in range", "in range", "in range"],
+                       "delta_log_value": [0.5, 0.0, 0.2, -3.0]})
+    result = matched_excess(df, "flag", "undervalued", n_boot=20)
+    assert result["n_flagged"] == 1
+    assert result["excess"] == pytest.approx(0.4)
