@@ -64,6 +64,11 @@ def predict_season(features: pd.DataFrame, season: int) -> pd.DataFrame:
         "predicted_value_eur": np.exp(scored["pred"]).round(-4).astype(int),
         "interval_low_eur": np.exp(scored["pred_low"]).round(-4).astype(int),
         "interval_high_eur": np.exp(scored["pred_high"]).round(-4).astype(int),
+        # Season-centred estimate and interval: the prediction shifted by the season's median gap,
+        # i.e. exactly what the adjusted gap and the flag compare the market value with.
+        "centred_value_eur": np.exp(scored["pred"] - scored["season_shift"]).round(-4).astype(int),
+        "centred_low_eur": np.exp(scored["adjusted_low"]).round(-4).astype(int),
+        "centred_high_eur": np.exp(scored["adjusted_high"]).round(-4).astype(int),
         "raw_gap_pct": to_pct(scored["raw_gap"]),
         "adjusted_gap_pct": to_pct(scored["adjusted_gap"]),
         "flag": scored["flag"],
