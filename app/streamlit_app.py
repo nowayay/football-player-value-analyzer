@@ -92,7 +92,8 @@ def apply_filters(values: pd.DataFrame, f: dict) -> pd.DataFrame:
 def ranking_table(df: pd.DataFrame, undervalued: bool, top_n: int) -> None:
     """Top-N players by adjusted gap (largest first for undervalued, smallest first for overvalued)."""
     ranked = df.sort_values("adjusted_gap_pct", ascending=not undervalued, kind="mergesort").head(top_n)
-    columns = ["player", "club", "position", "age", "market_value_m", "centred_value_m", "adjusted_gap_pct",
+    ranked = ranked.assign(gap_m=ranked["centred_value_m"] - ranked["market_value_m"])  # centred estimate - market
+    columns = ["player", "club", "position", "age", "market_value_m", "centred_value_m", "adjusted_gap_pct", "gap_m",
                "flag", "minutes"]
     if (ranked["age"] >= VETERAN_AGE).any():
         ranked = ranked.assign(caution=ranked["age"].ge(VETERAN_AGE).map({True: "⚠ age 33+", False: ""}))
@@ -107,6 +108,8 @@ def ranking_table(df: pd.DataFrame, undervalued: bool, top_n: int) -> None:
                 "Predicted (EUR m)*", format="%.1f",
                 help="Model estimate, centred on the season (see note below the table)"),
             "adjusted_gap_pct": st.column_config.NumberColumn("Adjusted gap", format="%+.0f%%"),
+            "gap_m": st.column_config.NumberColumn("Gap (EUR m)", format="%+.1f",
+                                                   help="Season-centred estimate minus market value"),
             "flag": "80% interval flag", "minutes": st.column_config.NumberColumn("Minutes", format="%d"),
             "caution": "Caution",
         },
@@ -220,7 +223,7 @@ def tab_performance() -> None:
         "within_25": st.column_config.NumberColumn("Within 25%", format="%.0f%%"),
         "within_50": st.column_config.NumberColumn("Within 50%", format="%.0f%%"),
         "mean_bias": st.column_config.NumberColumn("Mean bias (log)", format="%+.3f"),
-        "interval_coverage_80": st.column_config.TextColumn("80% interval coverage"),
+        "interval_coverage_80": st.column_config.TextColumn("80% coverage"),
     })
     st.caption(f"The main model (XGBoost) under-predicts the whole 2025/26 season (mean bias {main_bias:+.3f} log, "
                f"about {100 * (np.exp(main_bias) - 1):.0f}%): "
@@ -238,7 +241,7 @@ def tab_performance() -> None:
         "median_ape": st.column_config.NumberColumn("Median % error", format="%.0f%%"),
         "within_50": st.column_config.NumberColumn("Within 50%", format="%.0f%%"),
         "mean_bias": st.column_config.NumberColumn("Mean bias (log)", format="%+.3f"),
-        "coverage_conformal": st.column_config.TextColumn("80% interval coverage"),
+        "coverage_conformal": st.column_config.TextColumn("80% coverage"),
     })
 
     st.subheader("Where the model is right and wrong")
